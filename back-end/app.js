@@ -10,6 +10,7 @@ const { protect,admin } = require('./middleware/authMiddleware');
 // Models
 const User = require('./models/User');
 const Complaint = require('./models/Complaint');
+const Comment = require('./models/Comment');
 
 require('dotenv').config();
 
@@ -21,6 +22,20 @@ app.use(cors({
     origin: 'http://localhost:5173', // Allow requests from this origin
 }))
 app.use(cookieParser());
+
+const anonymousUsernames = [
+  'Brave Lion', 'Clever Fox', 'Wise Owl', 'Swift Eagle', 'Silent Wolf',
+  'Curious Cat', 'Bold Bear', 'Gentle Deer', 'Mighty Tiger', 'Happy Dolphin',
+  'Lucky Penguin', 'Calm Turtle', 'Shy Panda', 'Eager Beaver', 'Joyful Robin',
+  'Noble Falcon', 'Bright Hawk', 'Daring Jaguar', 'Fierce Panther', 'Loyal Serpent',
+  'Patient Shark', 'Quick Sparrow', 'Radiant Stallion', 'Serene Swan', 'Strong Whale',
+  'Valiant Phoenix', 'Vigilant Dragon', 'Witty Griffin', 'Zealous Sparrow', 'Amber Wolf',
+  'Azure Dragon', 'Crimson Hawk', 'Golden Griffin', 'Jade Serpent', 'Onyx Panther',
+  'Ruby Falcon', 'Silver Lion', 'Emerald Fox', 'Mystic Owl', 'Ancient Turtle',
+  'Hidden Badger', 'Shadow Fox', 'Spirit Eagle', 'Astral Wolf', 'Cosmic Serpent',
+  'Lunar Tiger', 'Solar Hawk', 'Ethereal Deer', 'Wandering Albatross', 'Gallant Horse',
+  'Humble Bee', 'Keen Otter', 'Jovial Jay', 'Nimble Rabbit', 'Quiet Mole'
+];
 
 // Connect to the database
 connectDB();
@@ -157,6 +172,22 @@ app.get('/api/complaints', protect, async (req, res) => {
   }
 });
 
+// Protected Get Single Complaint Endpoint
+app.get('/api/complaints/:id', protect, async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id)
+      .populate('author', 'name email');
+
+    if (complaint) {
+      res.status(200).json(complaint);
+    } else {
+      res.status(404).json({ message: 'Complaint not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
 // Protected Update Complaint Endpoint
 app.put('/api/complaints/:id', protect, async (req, res) => {
   const { title, description } = req.body;
@@ -257,19 +288,74 @@ app.delete('/api/complaints/:id/upvote', protect, async (req, res) => {
   }
 });
 
-// Protected Get Single Complaint Endpoint
-app.get('/api/complaints/:id', protect, async (req, res) => {
-  try {
-    const complaint = await Complaint.findById(req.params.id)
-      .populate('author', 'name email');
 
-    if (complaint) {
-      res.status(200).json(complaint);
-    } else {
-      res.status(404).json({ message: 'Complaint not found' });
+// Protected Add Comment to Complaint Endpoint
+app.post('/api/complaints/:id/comments', protect, async (req, res) => {
+  const { text } = req.body;
+  if (!text) {
+    return res.status(400).json({ message: 'Comment text is required.' });
+  }
+
+  try {
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found.' });
     }
+
+    // Create the new comment
+    const comment = await Comment.create({
+      text,
+      author: req.user._id,
+      complaint: req.params.id,
+    });
+
+    // Add the comment's ID to the complaint's comments array
+    complaint.comments.push(comment._id);
+    await complaint.save();
+
+    res.status(201).json(comment);
   } catch (error) {
-    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Get Comments for a Complaint Endpoint
+app.get('/api/complaints/:id/comments', protect, async (req, res) => {
+  try {
+    const comments = await Comment.find({ complaint: req.params.id })
+      .populate('author', 'name') // Show the author's name
+      .sort({ createdAt: -1 });   // Show newest comments first
+
+    res.status(200).json(comments);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Delete Comment Endpoint
+app.delete('/api/comments/:commentId', protect, async (req, res) => {
+  try {
+    const comment = await Comment.findById(req.params.commentId);
+
+    if (!comment) {
+      return res.status(404).json({ message: 'Comment not found.' });
+    }
+
+    // --- Ownership Check ---
+    if (comment.author.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'User not authorized' });
+    }
+
+    // We also need to remove the comment ID from the parent complaint's array
+    await Complaint.findByIdAndUpdate(comment.complaint, {
+      $pull: { comments: req.params.commentId },
+    });
+
+    // Now, delete the comment itself
+    await comment.deleteOne();
+
+    res.status(200).json({ message: 'Comment deleted successfully' });
+  } catch (error) {
     res.status(500).json({ message: 'Server Error' });
   }
 });
@@ -307,7 +393,6 @@ app.patch('/api/complaints/:id/strike', protect, admin, async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 });
-
 
 
 

@@ -5,7 +5,7 @@ const connectDB = require('./db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { protect } = require('./middleware/authMiddleware');
+const { protect,admin } = require('./middleware/authMiddleware');
 
 // Models
 const User = require('./models/User');
@@ -120,6 +120,196 @@ app.post('/api/auth/logout', (req, res) => {
   res.cookie('token', '');
   res.status(200).json({ message: 'Logged out successfully' });
 });
+
+// Protected Complaint Creation Endpoint
+app.post('/api/complaints', protect, async (req, res) => {
+  const { title, description } = req.body;
+
+  // Basic validation
+  if (!title || !description) {
+    return res.status(400).json({ message: 'Please provide a title and description.' });
+  }
+
+  try {
+    const complaint = await Complaint.create({
+      title,
+      description,
+      author: req.user._id, // The 'protect' middleware gives us req.user
+    });
+
+    res.status(201).json(complaint);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Get All Complaints Endpoint
+app.get('/api/complaints', protect, async (req, res) => {
+  try {
+    const complaints = await Complaint.find({})
+      .populate('author', 'name email') // Populate with author's name and email
+      .sort({ createdAt: -1 }); // Show newest first
+    res.status(200).json(complaints);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Update Complaint Endpoint
+app.put('/api/complaints/:id', protect, async (req, res) => {
+  const { title, description } = req.body;
+
+  try {
+    const complaint = await Complaint.findById(req.params.id);
+
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found' });
+    }
+
+    // Ownership Check
+    // Make sure the logged-in user is the author of the complaint
+    if (complaint.author.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'User not authorized' });
+    }
+
+    // Update the fields
+    complaint.title = title || complaint.title;
+    complaint.description = description || complaint.description;
+
+    const updatedComplaint = await complaint.save();
+    res.status(200).json(updatedComplaint);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Delete Complaint Endpoint
+app.delete('/api/complaints/:id', protect, async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id);
+
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found' });
+    }
+
+    // --- Ownership Check ---
+    if (complaint.author.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'User not authorized' });
+    }
+
+    await complaint.deleteOne(); // Or Complaint.findByIdAndDelete(req.params.id)
+    res.status(200).json({ message: 'Complaint removed' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Upvote Complaint Endpoint
+app.post('/api/complaints/:id/upvote', protect, async (req, res) => {
+  try {
+    // Find a complaint that matches the ID AND where the user has NOT already voted
+    const complaint = await Complaint.findOneAndUpdate(
+      { _id: req.params.id, upvotes: { $ne: req.user._id } }, 
+      {
+        $push: { upvotes: req.user._id },
+        $inc: { upvoteCount: 1 }        
+      },
+      { new: true } 
+    );
+
+    // If complaint is null, it means the user had already voted or the complaint doesn't exist.
+    if (!complaint) {
+      return res.status(400).json({ message: 'Complaint not found or you have already upvoted.' });
+    }
+
+    res.status(200).json(complaint);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Remove Upvote Complaint Endpoint
+app.delete('/api/complaints/:id/upvote', protect, async (req, res) => {
+  try {
+    // Find a complaint that matches the ID AND where the user HAS voted
+    const complaint = await Complaint.findOneAndUpdate(
+      { _id: req.params.id, upvotes: req.user._id }, // Query checks if user ID is in the array
+      {
+        $pull: { upvotes: req.user._id }, 
+        $inc: { upvoteCount: -1 }        
+      },
+      { new: true }
+    );
+
+    if (!complaint) {
+      return res.status(400).json({ message: 'Complaint not found or you have not upvoted it.' });
+    }
+
+    res.status(200).json(complaint);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Protected Get Single Complaint Endpoint
+app.get('/api/complaints/:id', protect, async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id)
+      .populate('author', 'name email');
+
+    if (complaint) {
+      res.status(200).json(complaint);
+    } else {
+      res.status(404).json({ message: 'Complaint not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Admin: Get All Complaints Sorted by Upvotes
+app.get('/api/admin/complaints', protect, admin, async (req, res) => {
+  try {
+    const complaints = await Complaint.find({})
+      .populate('author', 'name email')
+      .sort({ upvoteCount: -1 }); // Sort by upvoteCount, descending
+
+    res.status(200).json(complaints);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// Admin: Increment Strikes for a Complaint
+app.patch('/api/complaints/:id/strike', protect, admin, async (req, res) => {
+  try {
+    const updatedComplaint = await Complaint.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { strikes: 1 } },
+      { new: true } // This option returns the updated document
+    );
+
+    if (updatedComplaint) {
+      res.status(200).json(updatedComplaint);
+    } else {
+      res.status(404).json({ message: 'Complaint not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+
+
 
 // Protected User Profile Endpoint
 app.get('/api/users/profile', protect, (req, res) => {

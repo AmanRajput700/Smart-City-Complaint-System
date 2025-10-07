@@ -10,9 +10,12 @@ const complaintSchema = new Schema({
         type: String, 
         required: true 
     },
+    image: { 
+        type: String 
+    },
     status: {
         type: String,
-        enum: ['Pending', 'In Progress', 'Resolved', 'Rejected'],
+        enum: ['Pending','Admin Accepted', 'In Progress', 'Resolved', 'Rejected'],
         default: 'Pending'
     },
     author: { 
@@ -25,7 +28,9 @@ const complaintSchema = new Schema({
         ref: 'Location' 
     },
     upvotes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }]
+    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }],
+    strikes: { type: Number, default: 0 },
+    upvoteCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const Complaint = mongoose.model('Complaint', complaintSchema);

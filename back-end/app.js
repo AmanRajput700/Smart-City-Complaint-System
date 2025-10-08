@@ -60,11 +60,16 @@ app.post('/api/auth/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Generate a random anonymous name for the new user
+    const randomIndex = Math.floor(Math.random() * anonymousUsernames.length);
+    const randomName = anonymousUsernames[randomIndex];
+
     // 3. Create the new user in the database
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
+      anonymousName: randomName,
     });
 
     // 4. If the user was created successfully, generate a token
@@ -82,6 +87,7 @@ app.post('/api/auth/register', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        anonymousName: user.anonymousName,
         token: token,
       });
     } else {
@@ -163,7 +169,7 @@ app.post('/api/complaints', protect, async (req, res) => {
 app.get('/api/complaints', protect, async (req, res) => {
   try {
     const complaints = await Complaint.find({})
-      .populate('author', 'name email') // Populate with author's name and email
+      .populate('author', 'anonymousName') // Populate with author's name and email
       .sort({ createdAt: -1 }); // Show newest first
     res.status(200).json(complaints);
   } catch (error) {
@@ -176,7 +182,7 @@ app.get('/api/complaints', protect, async (req, res) => {
 app.get('/api/complaints/:id', protect, async (req, res) => {
   try {
     const complaint = await Complaint.findById(req.params.id)
-      .populate('author', 'name email');
+      .populate('author', 'anonymousName');
 
     if (complaint) {
       res.status(200).json(complaint);

@@ -1,53 +1,104 @@
-import React from 'react';
-import { FaArrowUp, FaArrowDown, FaRegCommentAlt, FaShare } from 'react-icons/fa';
+import React, { useState, useCallback } from 'react';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { FaArrowUp, FaRegCommentAlt, FaShare } from 'react-icons/fa';
 
-function ComplaintCard() {
+function ComplaintCard({ complaint }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [voteCount, setVoteCount] = useState(complaint.upvoteCount || 0);
+  const [hasUpvoted, setHasUpvoted] = useState(user ? complaint.upvotes.includes(user._id) : false);
+
+  // This function will navigate when the main card area is clicked
+  const handleCardClick = () => {
+    navigate(`/complaint/${complaint._id}`);
+  };
+
+  const handleUpvoteToggle = useCallback(async (event) => {
+    // CRUCIAL: Stop the click from triggering handleCardClick
+    event.stopPropagation();
+
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    const endpoint = `http://localhost:8080/api/complaints/${complaint._id}/upvote`;
+    const originalVoteCount = voteCount;
+    const originalHasUpvoted = hasUpvoted;
+
+    setHasUpvoted(!originalHasUpvoted);
+    setVoteCount(originalHasUpvoted ? originalVoteCount - 1 : originalVoteCount + 1);
+
+    try {
+      if (originalHasUpvoted) {
+        await axios.delete(endpoint, { withCredentials: true });
+      } else {
+        await axios.post(endpoint, {}, { withCredentials: true });
+      }
+    } catch (error) {
+      console.error('Failed to toggle upvote:', error);
+      setVoteCount(originalVoteCount);
+      setHasUpvoted(originalHasUpvoted);
+    }
+  }, [user, navigate, complaint._id, voteCount, hasUpvoted]);
+
+  const handleCommentsClick = (event) => {
+    event.stopPropagation();
+    navigate(`/complaint/${complaint._id}`);
+  };
+
+  const handleShareClick = useCallback((event) => {
+    event.stopPropagation();
+    // Share logic here
+  }, []);
+
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg mb-6 flex flex-col shadow-lg">
-      {/* Card Header */}
+    // The main div is now clickable
+    <div 
+      onClick={handleCardClick} 
+      className="bg-zinc-900 border border-zinc-700 rounded-lg mb-6 flex flex-col shadow-lg hover:border-zinc-600 transition-colors duration-200 cursor-pointer"
+    >
       <div className="p-4">
         <p className="text-xs text-zinc-400">Posted by 
-          <span className="font-semibold text-gray-200 ml-1">Brave Lion</span>
+          <span className="font-semibold text-purple-400 ml-1">
+            {complaint.author?.anonymousName || 'Anonymous'}
+          </span>
         </p>
-        <h3 className="text-xl font-bold mt-1 text-white">Example Complaint Title: Pothole on 2nd Street</h3>
+        <h3 className="text-xl font-bold mt-1 text-white">{complaint.title}</h3>
       </div>
 
-      {/* Complaint Image (Placeholder) */}
-      <div className="bg-black w-full h-72 flex items-center justify-center border-y border-zinc-700">
-        <p className="text-zinc-500">Complaint Image Here</p>
-      </div>
+      {complaint.image && (
+        <div className="bg-black w-full flex items-center justify-center border-y border-zinc-700">
+          <img 
+            src={`http://localhost:8080/${complaint.image.replace(/\\/g, '/')}`} 
+            alt={complaint.title || 'Complaint Image'} 
+            className="max-h-96 object-contain" 
+          />
+        </div>
+      )}
       
-      {/* Card Body */}
       <div className="p-4">
-        <p className="text-sm text-zinc-300">
-          This is the description of the complaint...
-        </p>
+        <p className="text-sm text-zinc-300">{complaint.description}</p>
       </div>
 
-      {/* Redesigned Action Bar with justify-between */}
       <div className="flex items-center justify-between px-4 pb-2 text-sm font-bold text-zinc-400">
-        
-        {/* Vote button group (this stays on the left) */}
         <div className="flex items-center bg-zinc-800 p-1 rounded-full">
-          <button className="flex items-center gap-1 p-1 rounded-full hover:bg-zinc-700">
-            <FaArrowUp className="w-4 h-4" />
-          </button>
-          <span className="px-2 text-white">3.8k</span>
-          <button className="flex items-center gap-1 p-1 rounded-full hover:bg-zinc-700">
-            <FaArrowDown className="w-4 h-4" />
+          {/* This button's click will be stopped */}
+          <button onClick={handleUpvoteToggle} className="flex items-center gap-2 p-1 rounded-full hover:bg-zinc-700 px-2 transition-colors">
+            <FaArrowUp className={`w-4 h-4 transition-colors ${hasUpvoted ? 'text-green-500' : 'text-zinc-400'}`} />
+            <span className="text-white">{voteCount}</span>
           </button>
         </div>
-
-        {/* NEW: Group for right-side buttons */}
+        
         <div className="flex items-center gap-4">
-          {/* Comments button */}
-          <button className="flex items-center gap-2 p-2 rounded-full hover:bg-zinc-700">
+          <button onClick={handleCommentsClick} className="flex items-center gap-2 p-2 rounded-full hover:bg-zinc-700 transition-colors">
             <FaRegCommentAlt className="w-4 h-4" />
-            <span>3.7k Comments</span>
+            <span>{complaint.comments?.length || 0} Comments</span>
           </button>
-
-          {/* Share button */}
-          <button className="flex items-center gap-2 p-2 rounded-full hover:bg-zinc-700">
+          <button onClick={handleShareClick} className="flex items-center gap-2 p-2 rounded-full hover:bg-zinc-700 transition-colors">
             <FaShare className="w-4 h-4" />
             <span>Share</span>
           </button>

@@ -19,7 +19,7 @@ function RightSidebar() {
       <div className="flex-grow"></div>
 
       {/* 3. The Footer, now outside the floating module */}
-      <footer className="text-xs text-zinc-500 p-4">
+      <footer className="text-xs text-zinc-500 p-14">
         <div className="flex flex-wrap gap-x-4 gap-y-2 mb-2">
           <a href="#" className="hover:underline">User Agreement</a>
           <a href="#" className="hover:underline">Privacy Policy</a>

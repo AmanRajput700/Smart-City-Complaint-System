@@ -19,7 +19,8 @@ const PORT = process.env.PORT || 8080;
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'http://localhost:5173', // Allow requests from this origin
+    origin: 'http://localhost:5173', 
+    credentials: true
 }))
 app.use(cookieParser());
 
@@ -166,7 +167,7 @@ app.post('/api/complaints', protect, async (req, res) => {
 });
 
 // Protected Get All Complaints Endpoint
-app.get('/api/complaints', protect, async (req, res) => {
+app.get('/api/complaints', async (req, res) => {
   try {
     const complaints = await Complaint.find({})
       .populate('author', 'anonymousName') // Populate with author's name and email
